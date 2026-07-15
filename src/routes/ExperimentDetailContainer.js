@@ -27,12 +27,12 @@ export default function ExperimentDetailContainer(props) {
     const hasLocalStorage = experimentId && localStorage.getItem('experimentTrial')?.experimentId !== null;
     const getTask = () => Task.getStaticTask(task);
     const hasMultipleInputs = getTask()?.useMultiInput ?? getTask()?.inputs?.length > 1;
-    const localStorageInput = hasLocalStorage ? JSON.parse(localStorage.getItem('experimentTrial'))?.experimentId?.inputs : [];
-    const [inputsProp, setInputsProp] = useState(hasLocalStorage ? (hasMultipleInputs ? JSON.parse(localStorage.getItem('experimentTrial'))?.experimentId?.inputs : JSON.parse(localStorage.getItem('experimentTrial'))?.experimentId?.inputs.flat()) : []);
-    const localStorageModels = hasLocalStorage ? JSON.parse(localStorage.getItem('experimentTrial'))?.experimentId?.models : [];
+    const localStorageInput = hasLocalStorage ? JSON.parse(localStorage.getItem('experimentTrial'))?.experimentId?.inputs ?? [] : [];
+    const [inputsProp, setInputsProp] = useState(hasLocalStorage ? (hasMultipleInputs ? JSON.parse(localStorage.getItem('experimentTrial'))?.experimentId?.inputs ?? [] : (JSON.parse(localStorage.getItem('experimentTrial'))?.experimentId?.inputs ?? []).flat()) : []);
+    const localStorageModels = hasLocalStorage ? JSON.parse(localStorage.getItem('experimentTrial'))?.experimentId?.models ?? [] : [];
     const [experimentProp, setExperimentProp] = useState({
         id: experimentId,
-        trials: localStorageModels.map(model => ({ model: model, inputs: localStorageInput[0] }))
+        trials: (localStorageModels ?? []).map(model => ({ model: model, inputs: localStorageInput[0] }))
     });
 
 

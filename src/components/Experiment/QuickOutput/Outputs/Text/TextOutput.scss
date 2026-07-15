@@ -2,7 +2,8 @@
 
 .text-output, .text-to-code-output, 
 .audio-to-text-output, .text-to-audio-output,
-.text-conversation-output, .image-to-text-output, .audio-to-audio-output, .text-guided-image-to-image, .visual-question-answering, .text-to-video-output, .text-to-image-output {
+.text-conversation-output, .image-to-text-output, .audio-to-audio-output, .text-guided-image-to-image, .visual-question-answering, .text-to-video-output, .text-to-image-output,
+.audio-diarization-output {
   display: flex;
   flex-direction: row;
   gap: 72px;
@@ -91,6 +92,7 @@
 
     &-text {
       @include body();
+      white-space: pre-wrap;
     }
 
     &-background {
