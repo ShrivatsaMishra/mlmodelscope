@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef } from "react";
 import useBEMNaming from "../../../../../common/useBEMNaming";
 import useTextOutput from "../Text/useTextOutput";
 import OutputDuration from "../_Common/components/OutputDuration";
@@ -17,6 +17,22 @@ function getSpeakerColor(speakerName, speakerList) {
     return SPEAKER_COLORS[idx % SPEAKER_COLORS.length];
 }
 
+const normalizeSegment = (segment, id) => {
+    const start = Number(segment?.start);
+    const end = Number(segment?.end);
+
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+        return null;
+    }
+
+    return {
+        id,
+        start,
+        end,
+        speaker: segment?.speaker || `SPEAKER_${id}`
+    };
+};
+
 export default function AudioDiarizationOutput(props) {
     const { getBlock, getElement } = useBEMNaming("audio-diarization-output");
     const { output, inferenceDuration, input } = useTextOutput(props.trial);
@@ -24,7 +40,6 @@ export default function AudioDiarizationOutput(props) {
 
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
-    const [isPlaying, setIsPlaying] = useState(false);
 
     // Extract segments from the diarisation output (either JSON list, object, or custom line format)
     const segments = React.useMemo(() => {
@@ -36,12 +51,7 @@ export default function AudioDiarizationOutput(props) {
         } else if (typeof output === "object") {
             // If useTextOutput returned an object, check if it's already an array of segments or a structured feature object
             if (Array.isArray(output)) {
-                return output.map((seg, idx) => ({
-                    id: idx,
-                    start: Number(seg.start),
-                    end: Number(seg.end),
-                    speaker: seg.speaker || `SPEAKER_${idx}`
-                }));
+                return output.map(normalizeSegment).filter(Boolean);
             }
             if (output.text) {
                 outputStr = output.text;
@@ -58,12 +68,7 @@ export default function AudioDiarizationOutput(props) {
         try {
             const parsed = JSON.parse(outputStr);
             if (Array.isArray(parsed)) {
-                return parsed.map((seg, idx) => ({
-                    id: idx,
-                    start: Number(seg.start),
-                    end: Number(seg.end),
-                    speaker: seg.speaker || `SPEAKER_${idx}`
-                }));
+                return parsed.map(normalizeSegment).filter(Boolean);
             }
         } catch (e) {
             // Fall through to plain text parsing
@@ -94,12 +99,11 @@ export default function AudioDiarizationOutput(props) {
                 const startSecs = convertToSeconds(match[1]);
                 const endSecs = convertToSeconds(match[2]);
                 const speaker = match[3].trim();
-                parsedSegments.push({
-                    id: idCounter++,
-                    start: startSecs,
-                    end: endSecs,
-                    speaker: speaker
-                });
+                const segment = normalizeSegment(
+                    { start: startSecs, end: endSecs, speaker },
+                    idCounter++
+                );
+                if (segment) parsedSegments.push(segment);
             }
         }
         return parsedSegments;
@@ -129,20 +133,12 @@ export default function AudioDiarizationOutput(props) {
         }
     };
 
-    const onPlayPause = (playing) => {
-        setIsPlaying(playing);
-    };
-
     // Seek to specific timeline spot when segment clicked
     const handleSegmentClick = (start) => {
         if (audioRef.current) {
             audioRef.current.currentTime = start;
             audioRef.current.play().catch(() => {});
         }
-    };
-
-    const onSubmit = () => {
-        props.onSubmit(input);
     };
 
     const formatTime = (secs) => {
@@ -159,7 +155,7 @@ export default function AudioDiarizationOutput(props) {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
                     <h3 className={getElement("timeline-title")} style={{ margin: 0 }}>Input Audio</h3>
                     {props.onBackClicked && (
-                        <button 
+                        <button
                             onClick={props.onBackClicked}
                             style={{
                                 background: "none",
@@ -180,11 +176,9 @@ export default function AudioDiarizationOutput(props) {
                 <audio
                     ref={audioRef}
                     controls
-                    src={input.src}
+                    src={input?.src}
                     onTimeUpdate={onTimeUpdate}
                     onLoadedMetadata={onLoadedMetadata}
-                    onPlay={() => onPlayPause(true)}
-                    onPause={() => onPlayPause(false)}
                 />
 
                 {/* Speaker Legend */}
@@ -197,7 +191,7 @@ export default function AudioDiarizationOutput(props) {
                                     style={{ backgroundColor: getSpeakerColor(speaker, uniqueSpeakers) }}
                                 />
                                 <span className={
-                                    getElement("legend-name") + 
+                                    getElement("legend-name") +
                                     (activeSegment?.speaker === speaker ? ` ${getElement("legend-name")}--active` : "")
                                 }>
                                     {speaker}
@@ -230,7 +224,7 @@ export default function AudioDiarizationOutput(props) {
                                 <div
                                     key={seg.id}
                                     className={
-                                        getElement("timeline-segment") + 
+                                        getElement("timeline-segment") +
                                         (isSegmentActive ? ` ${getElement("timeline-segment")}--active` : "")
                                     }
                                     style={{
@@ -252,7 +246,7 @@ export default function AudioDiarizationOutput(props) {
             {/* Structured Segment Output List */}
             <div className={getElement("results")}>
                 <div className={getElement("list-header")}>
-                    <h3 className={getElement("list-title")}>Diarisation Segments</h3>
+                    <h3 className={getElement("list-title")}>Diarization Segments</h3>
                     <OutputDuration duration={inferenceDuration} />
                 </div>
 
@@ -266,7 +260,7 @@ export default function AudioDiarizationOutput(props) {
                                 <div
                                     key={seg.id}
                                     className={
-                                        getElement("segment-row") + 
+                                        getElement("segment-row") +
                                         (isSegmentActive ? ` ${getElement("segment-row")}--active` : "")
                                     }
                                     onClick={() => handleSegmentClick(seg.start)}
@@ -291,7 +285,11 @@ export default function AudioDiarizationOutput(props) {
                         })
                     ) : (
                         <div style={{ color: "var(--text-muted, #6c757d)", fontStyle: "italic" }}>
-                            {output || "No segments extracted yet."}
+                            {typeof output === "string"
+                                ? output
+                                : output
+                                    ? JSON.stringify(output)
+                                    : "No segments extracted yet."}
                         </div>
                     )}
                 </div>
