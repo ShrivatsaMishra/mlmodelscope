@@ -135,8 +135,8 @@ export const SampleAudioToTextInputs = [
     src: "https://xlab1.netlify.app/automatic-speech-recognition-input.flac"
   },
   {
-    title: "test.wav",
-    src: "http://localhost:8000/test.wav"
+    title: "demo1.mp3",
+    src: "https://samplelib.com/lib/preview/mp3/sample-6s.mp3"
   },
   ,
   {

@@ -24,6 +24,7 @@ const normalizeSegment = (segment, id) => {
     const start = Number(segment?.start);
     const end = Number(segment?.end);
     const confidence = segment?.confidence !== undefined ? Number(segment.confidence) : null;
+    const confidenceType = segment?.confidence_type || segment?.confidenceType || null;
     const spectrogram = segment?.spectrogram || null;
 
     if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
@@ -36,6 +37,7 @@ const normalizeSegment = (segment, id) => {
         end,
         speaker: segment?.speaker || `SPEAKER_${id}`,
         confidence: confidence !== null && !Number.isNaN(confidence) ? confidence : null,
+        confidenceType,
         spectrogram
     };
 };
@@ -171,7 +173,8 @@ export default function AudioDiarizationOutput(props) {
         startTime: segment.start,
         endTime: segment.end,
         duration: segment.end - segment.start,
-        confidence: segment.confidence === null ? undefined : segment.confidence
+        confidence: segment.confidence === null ? undefined : segment.confidence,
+        confidenceType: segment.confidenceType || undefined
     });
     const modelContext = compactObject({
         name: props.trial?.model?.name,
@@ -292,7 +295,8 @@ export default function AudioDiarizationOutput(props) {
                                 const widthPct = ((seg.end - seg.start) / duration) * 100;
                                 const isSegmentActive = activeSegment?.id === seg.id;
                                 const color = getSpeakerColor(seg.speaker, uniqueSpeakers);
-                                const confStr = seg.confidence !== null ? ` (Conf: ${Math.round(seg.confidence * 100)}%)` : "";
+                                const scoreName = seg.confidenceType === "mean_speaker_activity" ? "Mean activity" : "Confidence";
+                                const confStr = seg.confidence !== null ? ` (${scoreName}: ${Math.round(seg.confidence * 100)}%)` : "";
 
                                 return (
                                     <div
@@ -357,7 +361,7 @@ export default function AudioDiarizationOutput(props) {
                                             </span>
                                             {seg.confidence !== null && (
                                                 <span style={{ fontSize: "12px", color: "var(--text-muted, #6c757d)", fontWeight: "500" }}>
-                                                    Confidence: {Math.round(seg.confidence * 100)}%
+                                                    {seg.confidenceType === "mean_speaker_activity" ? "Mean activity" : "Confidence"}: {Math.round(seg.confidence * 100)}%
                                                 </span>
                                             )}
                                         </div>

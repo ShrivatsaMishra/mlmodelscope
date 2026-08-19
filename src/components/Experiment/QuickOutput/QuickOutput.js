@@ -65,6 +65,7 @@ import {
   useInteractiveExplanation
 } from "./InteractiveExplanation/InteractiveExplanationContext";
 import TextSelectionExplanation from "./InteractiveExplanation/TextSelectionExplanation";
+import { isTokenProbabilitySupportedModel } from "../../../helpers/explanation";
 
 
 const defaultProps = {
@@ -267,10 +268,7 @@ export default function QuickOutput(givenProps) {
       ].filter(Boolean);
     })
     : [];
-  const isGPT2 = props.trialOutput?.model?.name === "GPT_2" &&
-    props.trialOutput?.model?.framework?.name?.toLowerCase() === "pytorch" &&
-    props.trialOutput?.model?.output?.type === textToText;
-  const tokenDecisionArtifacts = isGPT2
+  const tokenDecisionArtifacts = isTokenProbabilitySupportedModel(props.trialOutput?.model)
     ? makeTokenDecisionArtifacts(props.trialOutput, explanation)
     : [];
   const interactiveArtifacts = [
