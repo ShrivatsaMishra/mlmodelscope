@@ -67,6 +67,25 @@ test("grounds token decisions without assuming a decoding procedure", () => {
   assert.match(prompt, /Do not claim attention weights, hidden states, embeddings, or advance planning/);
   assert.match(prompt, /probability measures continuation likelihood, not factual correctness/);
   assert.match(prompt, /token probability does not establish factual correctness/);
+  assert.match(prompt, /GPT-2 and BLOOM generate a continuation/);
+});
+
+test("grounds BLOOM token decisions with the same model-neutral guidance", () => {
+  const prompt = buildExplanationPrompt({
+    context: {
+      artifact: {
+        kind: "token_decision",
+        selection: { token: " world", tokenId: 123, position: 0, probability: 0.42 }
+      },
+      model: { name: "bloom_560m", task: "text_to_text", framework: "PyTorch" }
+    },
+    question: "Why was this token selected here?",
+    expertiseLevel: "beginner",
+    attachmentMetadata: []
+  });
+
+  assert.match(prompt, /GPT-2 and BLOOM generate a continuation/);
+  assert.match(prompt, /the text-generation model predicts plausible continuation text/);
 });
 
 test("grounds spectrogram explanations as signal views rather than diarization attribution", () => {
