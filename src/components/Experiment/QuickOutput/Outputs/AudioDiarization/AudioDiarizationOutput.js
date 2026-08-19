@@ -3,6 +3,8 @@ import useBEMNaming from "../../../../../common/useBEMNaming";
 import useTextOutput from "../Text/useTextOutput";
 import OutputDuration from "../_Common/components/OutputDuration";
 import Rating from "../Classification/Rating";
+import AIExplainAction from "../../InteractiveExplanation/AIExplainAction";
+import { useInteractiveExplanation } from "../../InteractiveExplanation/InteractiveExplanationContext";
 import SpectrogramModal from "./SpectrogramModal";
 import "./AudioDiarization.scss";
 
@@ -41,6 +43,7 @@ const normalizeSegment = (segment, id) => {
 export default function AudioDiarizationOutput(props) {
     const { getBlock, getElement } = useBEMNaming("audio-diarization-output");
     const { output, inferenceDuration, input } = useTextOutput(props.trial);
+    const { selectArtifact } = useInteractiveExplanation();
     const audioRef = useRef(null);
 
     const [currentTime, setCurrentTime] = useState(0);
@@ -159,6 +162,61 @@ export default function AudioDiarizationOutput(props) {
         const s = Math.floor(secs % 60);
         const ms = Math.floor((secs % 1) * 100);
         return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}.${ms.toString().padStart(2, "0")}`;
+    };
+
+    const isInteractivePyannoteResult = props.trial?.model?.name === "pyannote_diarization";
+    const makeSegmentSelection = (segment) => compactObject({
+        segmentId: segment.id,
+        speaker: segment.speaker,
+        startTime: segment.start,
+        endTime: segment.end,
+        duration: segment.end - segment.start,
+        confidence: segment.confidence === null ? undefined : segment.confidence
+    });
+    const modelContext = compactObject({
+        name: props.trial?.model?.name,
+        task: props.trial?.model?.output?.type,
+        framework: props.trial?.model?.framework?.name,
+        frameworkVersion: props.trial?.model?.framework?.version,
+        trainingDataset: props.trial?.model?.attributes?.training_dataset
+    });
+
+    const explainSegment = (event, segment) => {
+        event.stopPropagation();
+        selectArtifact({
+            id: `diarization-segment-${segment.id}`,
+            label: "Speaker diarization segment",
+            kind: "diarization_segment",
+            transient: true,
+            selection: makeSegmentSelection(segment),
+            model: modelContext
+        }, "What does this segment mean?");
+    };
+
+    const explainSpectrogram = (segment, renderedSpectrogram) => {
+        selectArtifact({
+            id: `spectrogram-segment-${segment.id}`,
+            label: "Segment spectrogram",
+            kind: "spectrogram_segment",
+            transient: true,
+            selection: makeSegmentSelection(segment),
+            structuredData: {
+                numBands: segment.spectrogram.length,
+                numFrames: segment.spectrogram[0].length,
+                visualization: {
+                    horizontalAxis: "time-frame progression across the selected segment",
+                    verticalAxis: "frequency-band index, with higher bands rendered toward the top",
+                    colorScale: "values normalized to the minimum and maximum within this segment"
+                }
+            },
+            model: modelContext,
+            attachments: [{
+                role: "spectrogram",
+                mimeType: "image/png",
+                description: `Rendered spectrogram for ${segment.speaker} from ${segment.start} to ${segment.end} seconds`,
+                data: renderedSpectrogram
+            }]
+        }, "What am I looking at?");
     };
 
     return (
@@ -290,7 +348,7 @@ export default function AudioDiarizationOutput(props) {
                                         <span>{formatTime(seg.end)}</span>
                                     </div>
                                     <div className={getElement("segment-content")}>
-                                        <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1 }}>
+                                        <div className={getElement("segment-summary")}>
                                             <span
                                                 className={getElement("segment-speaker-badge")}
                                                 style={{ backgroundColor: color }}
@@ -303,17 +361,21 @@ export default function AudioDiarizationOutput(props) {
                                                 </span>
                                             )}
                                         </div>
-                                        <span
-                                            style={{
-                                                fontSize: "12px",
-                                                color: "var(--text-muted, #adb5bd)",
-                                                marginLeft: "auto",
-                                                whiteSpace: "nowrap"
-                                            }}
-                                            title="View spectrogram"
-                                        >
-                                            📊
-                                        </span>
+                                        <div className={getElement("segment-actions")}>
+                                            {isInteractivePyannoteResult && (
+                                                <AIExplainAction
+                                                    onClick={(event) => explainSegment(event, seg)}
+                                                    ariaLabel={`Explain the ${seg.speaker} segment from ${formatTime(seg.start)} to ${formatTime(seg.end)} with AI`}
+                                                />
+                                            )}
+                                            <span
+                                                className={getElement("spectrogram-indicator")}
+                                                title="View spectrogram"
+                                                aria-hidden="true"
+                                            >
+                                                📊
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
                             );
@@ -336,8 +398,13 @@ export default function AudioDiarizationOutput(props) {
                 <SpectrogramModal
                     segment={selectedSegment}
                     onClose={() => setSelectedSegment(null)}
+                    onExplain={isInteractivePyannoteResult ? explainSpectrogram : undefined}
                 />
             )}
         </div>
     );
+}
+
+function compactObject(value) {
+    return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined));
 }
