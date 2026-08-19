@@ -1,178 +1,195 @@
-import React from "react";
-import { useState, useRef, useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { Dashboard } from "@uppy/react";
 
 import { useUploadInputControl } from "../UploadInput/useUploadInputControl";
 import { getAllowedFileTypes } from "../../../../../helpers/UppyFileTypeCheckerPlugin";
-
-import { Dashboard } from "@uppy/react";
-
-import MicrophoneIcon from "../../../../../resources/icons/icon-microphone-white.png"
-import DownloadIcon from "../../../../../resources/icons/icon-download.png"
+import MicrophoneIcon from "../../../../../resources/icons/icon-microphone-white.png";
+import DownloadIcon from "../../../../../resources/icons/icon-download.png";
+import {
+    convertRecordedAudioToWav,
+    getSupportedRecorderMimeType,
+    WAV_MIME_TYPE
+} from "./audioRecording";
 
 import "./AudioRecorder.scss";
 
-const mimeType = "audio/webm";
+const PYANNOTE_MODEL_NAME = "pyannote_diarization";
 
 export default function AudioRecorder(props) {
     const [permission, setPermission] = useState(false);
     const [stream, setStream] = useState(null);
-    const mediaRecorder = useRef(null);
     const [recordingStatus, setRecordingStatus] = useState("inactive");
-    const [audioChunks, setAudioChunks] = useState([]);
-    const [audio, setAudio] = useState(null);   
-    const [audioBlob, setAudioBlob] = useState(null);  
+    const [audio, setAudio] = useState(null);
+    const [recordedFile, setRecordedFile] = useState(null);
+    const [preparationError, setPreparationError] = useState(null);
     const [uppyFileId, setUppyFileId] = useState(null);
+    const mediaRecorder = useRef(null);
+    const audioChunks = useRef([]);
 
     const allowedFileTypes = getAllowedFileTypes(props.task);
-    const {uppy} = useUploadInputControl({allowedFileTypes: allowedFileTypes, ...props});
+    const { uppy } = useUploadInputControl({ allowedFileTypes, ...props });
+    const requiresWav = props.model?.name === PYANNOTE_MODEL_NAME;
 
     useEffect(() => {
-        if (stream) {
-            startRecording();
-        }
-        
+        if (stream) startRecording();
     }, [stream]);
 
-    useEffect(() => {
-        if (audioBlob) {
-            uploadAudio();
-        }
-    }, [audioBlob]);
+    useEffect(() => () => {
+        if (audio) URL.revokeObjectURL(audio);
+    }, [audio]);
 
     const getMicrophonePermission = async () => {
-        if ("MediaRecorder" in window) {
-            try {
-                const streamData = await navigator.mediaDevices.getUserMedia({
-                    audio: true,
-                    video: false,
-                });
-                setPermission(true);
-                setStream(streamData);
-            } catch (err) {
-                alert(err.message);
-            }
-        } else {
-            alert("The MediaRecorder API is not supported in your browser.");
+        setPreparationError(null);
+        if (!("MediaRecorder" in window)) {
+            setPreparationError("Microphone recording is not supported in this browser.");
+            return;
+        }
+
+        try {
+            const streamData = await navigator.mediaDevices.getUserMedia({
+                audio: true,
+                video: false
+            });
+            setPermission(true);
+            setStream(streamData);
+        } catch (error) {
+            setPreparationError(error.message || "Microphone access could not be started.");
         }
     };
 
-    const removeMicrophonePermission = async (stream) => {
-        setPermission(false)
-        stream.getTracks().forEach(track => {
-            track.stop()
-            track.enabled = false
+    const removeMicrophonePermission = (activeStream) => {
+        setPermission(false);
+        activeStream?.getTracks().forEach((track) => {
+            track.stop();
+            track.enabled = false;
         });
-    }
-
-    const startRecording = async () => {
-        setRecordingStatus("recording");
-
-        //create new Media recorder instance using the stream
-        const media = new MediaRecorder(stream, { type: mimeType }); 
-
-        //set the MediaRecorder instance to the mediaRecorder ref
-        mediaRecorder.current = media;
-        //invokes the start method to start the recording process
-        await mediaRecorder.current.start();
-        let localAudioChunks = [];
-        mediaRecorder.current.ondataavailable = (event) => {
-           if (typeof event.data === "undefined") return;
-           if (event.data.size === 0) return;
-           localAudioChunks.push(event.data);
-        };
-        setAudioChunks(localAudioChunks);
+        setStream(null);
     };
-      
+
+    const startRecording = () => {
+        try {
+            const supportedMimeType = getSupportedRecorderMimeType();
+            const options = supportedMimeType ? { mimeType: supportedMimeType } : undefined;
+            const recorder = new MediaRecorder(stream, options);
+
+            audioChunks.current = [];
+            recorder.ondataavailable = (event) => {
+                if (event.data?.size > 0) audioChunks.current.push(event.data);
+            };
+            mediaRecorder.current = recorder;
+            setRecordingStatus("recording");
+            recorder.start();
+        } catch (error) {
+            removeMicrophonePermission(stream);
+            setRecordingStatus("inactive");
+            setPreparationError(error.message || "Audio recording could not be started.");
+        }
+    };
+
     const stopRecording = () => {
-        setRecordingStatus("inactive");
-        //stops the recording instance
-        mediaRecorder.current.stop();
-        mediaRecorder.current.onstop = () => {
-            //creates a blob file from the audiochunks data
-            const blob = new Blob(audioChunks, { type: mimeType });
-            setAudioBlob(blob);
+        const recorder = mediaRecorder.current;
+        if (!recorder || recorder.state === "inactive") return;
 
-            //creates a playable URL from the blob file.
-            const audioUrl = URL.createObjectURL(blob);
-            setAudio(audioUrl);
-            setAudioChunks([]);
+        setRecordingStatus(requiresWav ? "preparing" : "inactive");
+        recorder.onstop = async () => {
+            try {
+                const recordedMimeType = recorder.mimeType || audioChunks.current[0]?.type || "audio/webm";
+                const rawRecording = new Blob(audioChunks.current, { type: recordedMimeType });
+                const preparedBlob = requiresWav
+                    ? await convertRecordedAudioToWav(rawRecording)
+                    : rawRecording;
+                const extension = requiresWav ? "wav" : extensionForMimeType(recordedMimeType);
+                const fileType = requiresWav ? WAV_MIME_TYPE : recordedMimeType;
+                const file = new File(
+                    [preparedBlob],
+                    `temp-audio-${Date.now()}.${extension}`,
+                    { type: fileType }
+                );
 
-            // Remove microphone permissions
-            removeMicrophonePermission(mediaRecorder.current.stream);
+                setRecordedFile(file);
+                setAudio(URL.createObjectURL(file));
+                setPreparationError(null);
+                uploadAudio(file);
+            } catch (error) {
+                setRecordedFile(null);
+                setAudio(null);
+                setPreparationError(error.message || "The recording could not be prepared. Please try again.");
+            } finally {
+                audioChunks.current = [];
+                setRecordingStatus("inactive");
+                removeMicrophonePermission(recorder.stream);
+            }
         };
+        recorder.stop();
     };
 
     const recordAgain = async () => {
-        uppy.removeFile(uppyFileId)
+        if (uppyFileId) uppy.removeFile(uppyFileId);
+        setUppyFileId(null);
+        setRecordedFile(null);
+        setAudio(null);
+        setPreparationError(null);
         await getMicrophonePermission();
-    }
+    };
 
-    const uploadAudio = async () => {
-        const uppyFile = uppy.addFile({
-            name: `temp-audio-${Date.now()}.webm`,
-            type: mimeType,
-            data: audioBlob,
-            source: 'Local'
+    const uploadAudio = (file) => {
+        const fileId = uppy.addFile({
+            name: file.name,
+            type: file.type,
+            data: file,
+            source: "Local"
         });
-
-        setUppyFileId(uppyFile)
-    }
-
+        setUppyFileId(fileId);
+    };
 
     return (
         <div>
             <main>
                 <div className="audio-controls">
-                    {/* Initial Recording Controls */}
-                    { (!permission && !audio) ? (
-                        <button onClick={getMicrophonePermission} type="button"
-                            className="record-button"
-                        >
-                            <img className="record-audio-icon" src={MicrophoneIcon} />
+                    {!permission && !audio && recordingStatus === "inactive" && (
+                        <button onClick={getMicrophonePermission} type="button" className="record-button">
+                            <img className="record-audio-icon" src={MicrophoneIcon} alt="" />
                             Start Recording
                         </button>
-                    ) : null }
-                    {recordingStatus === "recording" ? (
-                        <button 
-                            onClick={stopRecording} 
-                            type="button"
-                            className={"record-button" + (recordingStatus === "recording" ? " pulsing" : "")}
-                        >
-                            <img className="record-audio-icon" src={MicrophoneIcon} />
+                    )}
+                    {recordingStatus === "recording" && (
+                        <button onClick={stopRecording} type="button" className="record-button pulsing">
+                            <img className="record-audio-icon" src={MicrophoneIcon} alt="" />
                             Stop Recording
                         </button>
-                    ) : null }
-                    {/* Retry Recording Controls */}
-                    { (audio && recordingStatus === "inactive") && (
-                        <button
-                            className="record-button"
-                            type="button"
-                            onClick={recordAgain}
-                        >
-                            <img className="record-audio-icon" src={MicrophoneIcon} />
+                    )}
+                    {audio && recordingStatus === "inactive" && (
+                        <button className="record-button" type="button" onClick={recordAgain}>
+                            <img className="record-audio-icon" src={MicrophoneIcon} alt="" />
                             Record again
                         </button>
                     )}
-                    
-
                 </div>
-                {audio ? (
+
+                {recordingStatus === "preparing" && (
+                    <p className="audio-preparation-status" role="status">Preparing audio…</p>
+                )}
+                {preparationError && (
+                    <p className="audio-preparation-error" role="alert">{preparationError}</p>
+                )}
+                {audio && recordedFile && (
                     <div className="audio-container">
                         <audio className="recorded-audio-file" src={audio} controls />
-                        <a download href={audio}>
-                            <img className="download-audio-icon" src={DownloadIcon} />
+                        <a download={recordedFile.name} href={audio} aria-label="Download recorded audio">
+                            <img className="download-audio-icon" src={DownloadIcon} alt="" />
                         </a>
                     </div>
-                ) : null}       
-                {/* Uppy Dashboard */}
-                { (audio && recordingStatus === "inactive") && (
-                    <Dashboard 
-                        uppy={uppy} 
-                        width={"100%"} 
-                        height={"50%"} 
-                    />
-                )}                         
+                )}
+                {audio && recordingStatus === "inactive" && (
+                    <Dashboard uppy={uppy} width="100%" height={220} />
+                )}
             </main>
         </div>
-    )
+    );
+}
+
+function extensionForMimeType(mimeType) {
+    if (mimeType.includes("mp4")) return "m4a";
+    if (mimeType.includes("ogg")) return "ogg";
+    return "webm";
 }

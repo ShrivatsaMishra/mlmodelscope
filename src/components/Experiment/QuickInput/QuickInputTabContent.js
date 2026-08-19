@@ -16,6 +16,7 @@ export function QuickInputTabContent(props) {
         addInput={props.addInput}
         removeInput={props.removeInput}
         inputSelected={props.selectInput}
+        model={props.model}
         task={props.model.output.type}
         values={props.selectedInputs}
         useMultiImageSample={props.useMultiImageSample}

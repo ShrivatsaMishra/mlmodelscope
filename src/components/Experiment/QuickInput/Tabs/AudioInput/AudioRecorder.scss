@@ -65,3 +65,21 @@
         padding: 6px;
     }
 }
+
+.audio-preparation-status,
+.audio-preparation-error {
+    margin: 0 0 18px;
+    max-width: 560px;
+    padding: 10px 12px;
+}
+
+.audio-preparation-status {
+    background: #f1f5f8;
+    color: #536174;
+}
+
+.audio-preparation-error {
+    background: #fff3f1;
+    border-left: 3px solid $darkRed;
+    color: $darkRed;
+}
