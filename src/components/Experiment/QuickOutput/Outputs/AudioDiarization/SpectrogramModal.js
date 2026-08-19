@@ -4,7 +4,7 @@ import "./SpectrogramModal.scss";
 
 /**
  * Props:
- * segment  – { start, end, speaker, confidence, spectrogram }
+ * segment  – { start, end, speaker, confidence, confidenceType, spectrogram }
  * onClose  – callback to close the modal
  * onExplain – callback receiving the segment and rendered PNG data
  */
@@ -80,7 +80,7 @@ export default function SpectrogramModal({ segment, onClose, onExplain }) {
                         </span>
                         {segment.confidence !== null && (
                             <span className="spectrogram-modal__conf-label">
-                                Confidence: {Math.round(segment.confidence * 100)}%
+                                {segment.confidenceType === "mean_speaker_activity" ? "Mean activity" : "Confidence"}: {Math.round(segment.confidence * 100)}%
                             </span>
                         )}
                     </div>
